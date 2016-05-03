@@ -3,27 +3,10 @@ import re
 from ast import literal_eval
 import operator
 import matplotlib.pyplot as plt
-
-import os
-import shutil
-import random
-import pydot
-import sys
-from logging import debug, info, warning, error
 import numpy as np
-from scipy.stats import multivariate_normal
-from scipy.special import gamma, psi
-from scipy.optimize import minimize
-import theano
-import theano.d3viz as d3v
-import json
-from math import floor, log10, sqrt
-from IPython.display import display, Image, HTML
-
 
 logging.getLogger().setLevel(logging.DEBUG)
 logging.getLogger(__name__+'.TreeParser').setLevel(logging.DEBUG)
-
 
 class TreeParser(object):
 
