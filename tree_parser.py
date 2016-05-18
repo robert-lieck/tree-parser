@@ -71,12 +71,51 @@ class TreeParser(object):
         else:
             self.logger = logging.getLogger(__name__+'.TreeParser')
             self.parent = None
+            self.leaf_idx = None
             self.label = array[0]
             self.children = []
             if len(array) > 1:
                 for child_idx in range(1,len(array)):
                     self.children.append(TreeParser(array[child_idx]))
                     self.children[-1].parent = self
+            # get leaf indices
+            for leaf, (idx, depth) in self.layout().items():
+                leaf.leaf_idx = idx
+
+    def __str__(self):
+        return "{}".format(self.label)
+
+    def __repr__(self):
+        return "TreeParser()"
+
+    def leaf_pairs(self, depth=0, node_idx=0):
+        # check number of children
+        if len(self.children) != 2:
+            raise UserWarning("Nodes are expected to have exactly two children (this one has {})".format(len(self.children)))
+        # traverse tree to find leaf pairs for this node
+        left_offset = 0
+        left_leaf = self
+        while len(left_leaf.children) != 0:
+            left_leaf = left_leaf.children[0]
+            left_offset += 1
+        right_leaf = self
+        right_offset = 0
+        while len(right_leaf.children) != 0:
+            right_leaf = right_leaf.children[1]
+            right_offset += 1
+        # initialize list
+        leaf_pair_list = [{'left': left_leaf,
+                           'right': right_leaf,
+                           'parent': self,
+                           'depth': depth}]
+        # recursively add pairs of children
+        for child_idx, child in enumerate(self.children):
+            if len(child.children) != 0:
+                child_list = child.leaf_pairs(depth=depth+1,
+                                              node_idx=node_idx+child_idx)
+                leaf_pair_list += child_list
+        # return list
+        return leaf_pair_list
 
     def layout(self, leaf_positions=None):
         # depth first search
