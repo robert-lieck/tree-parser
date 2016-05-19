@@ -88,21 +88,50 @@ class TreeParser(object):
     def __repr__(self):
         return "TreeParser()"
 
+    def root_path(self):
+        node = self
+        path = self.label
+        while node.parent is not None:
+            node = node.parent
+            path += "-->" + node.label
+        return path
+
     def leaf_pairs(self, depth=0, node_idx=0):
         # check number of children
         if len(self.children) != 2:
             raise UserWarning("Nodes are expected to have exactly two children (this one has {})".format(len(self.children)))
-        # traverse tree to find leaf pairs for this node
-        left_offset = 0
-        left_leaf = self
+        # find left leaf
+        left_leaf = self.children[0]
         while len(left_leaf.children) != 0:
-            left_leaf = left_leaf.children[0]
-            left_offset += 1
-        right_leaf = self
-        right_offset = 0
+            new_child = None
+            for child in left_leaf.children:
+                if child.label == left_leaf.label:
+                    if new_child is not None:
+                        new_child = left_leaf.children[0]
+                        break
+                    else:
+                        new_child = child
+            if new_child is None:
+                raise UserWarning("Could not find chord label '{}' (root path: {}, labels: {})".format(left_leaf.label,
+                                                                                                       left_leaf.root_path(),
+                                                                                                       [n.label for n in left_leaf.children]))
+            left_leaf = new_child
+        # find right leaf
+        right_leaf = self.children[1]
         while len(right_leaf.children) != 0:
-            right_leaf = right_leaf.children[1]
-            right_offset += 1
+            new_child = None
+            for child in right_leaf.children:
+                if child.label == right_leaf.label:
+                    if new_child is not None:
+                        new_child = right_leaf.children[1]
+                        break
+                    else:
+                        new_child = child
+            if new_child is None:
+                raise UserWarning("Could not find chord label '{}' (root path: {}, labels: {})".format(right_leaf.label,
+                                                                                                       right_leaf.root_path(),
+                                                                                                       [n.label for n in right_leaf.children]))
+            right_leaf = new_child
         # initialize list
         leaf_pair_list = [{'left': left_leaf,
                            'right': right_leaf,
