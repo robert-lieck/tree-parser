@@ -8,42 +8,35 @@ import numpy as np
 logging.getLogger().setLevel(logging.DEBUG)
 logging.getLogger(__name__+'.TreeParser').setLevel(logging.DEBUG)
 
+
 class TreeParser(object):
 
     @staticmethod
     def parse(input, convert_brackets=False):
-        # print(input)
         if convert_brackets:
             # replace any non-square brackets by square brackets
             for opening, closing in [('[',']'), ('(',')'), ('{','}')]:
                 input = input.replace(opening,'[')
                 input = input.replace(closing,']')
         # remove leading and trailing whitespace
-        # print(input)
         input = input.strip()
         # replace any whitespace by a simple space
-        # print(input)
         input = re.sub('\s+', ' ', input)
         # remove whitespace between brackets
-        # print(input)
         input = input.replace('[ [', '[[')
         input = input.replace('] [', '][')
         input = input.replace('] ]', ']]')
         # patch brackets with comma
-        # print(input)
         input = input.replace('[', ',[')
         input = input.replace(']', '],')
         # remove multiple subsequent commas
-        # print(input)
         input = re.sub(',+', ',', input)
         # remove leading and trailing commas
-        # print(input)
         if input.startswith(','):
             input = input[1:]
         if input.endswith(','):
             input = input[:-1]
         # remove commas between double opening/closing brackets
-        # print(input)
         while True:
             mod_input = input.replace('],]', ']]')
             if input != mod_input:
@@ -57,12 +50,9 @@ class TreeParser(object):
             else:
                 break
         # remove whitespace before and after commas
-        # print(input)
         input = re.sub('\s*,\s*', ',', input)
         # patch any substring not containing functional characters with quotation marks
-        # print(input)
         input = re.sub('([^][,]+)', '"\\1"', input)
-        # print(input)
         return literal_eval(input)
 
     def __init__(self, array, string_input=False):
@@ -79,11 +69,13 @@ class TreeParser(object):
                     self.children.append(TreeParser(array[child_idx]))
                     self.children[-1].parent = self
             # get leaf indices
-            for leaf, (idx, depth) in self.layout().items():
-                leaf.leaf_idx = idx
+            for node, (x_pos, depth) in self.layout().items():
+                if not node.children:
+                    node.leaf_idx = x_pos
+                node.depth = depth
 
     def __str__(self):
-        return "{}".format(self.label)
+        return "{} ({},{})".format(self.label, self.leaf_idx, self.depth)
 
     def __repr__(self):
         return "TreeParser()"
@@ -96,51 +88,75 @@ class TreeParser(object):
             path += "-->" + node.label
         return path
 
-    def leaf_pairs(self, depth=0, node_idx=0):
+    def leaf_pairs(self, left_tie_breaking, right_tie_breaking, depth=0, node_idx=0):
         # check number of children
         if len(self.children) != 2:
             raise UserWarning("Nodes are expected to have exactly two children (this one has {})".format(len(self.children)))
-        # find left leaf
-        left_leaf = self.children[0]
-        while len(left_leaf.children) != 0:
-            new_child = None
-            for child in left_leaf.children:
-                if child.label == left_leaf.label:
-                    if new_child is not None:
-                        new_child = left_leaf.children[0]
-                        break
-                    else:
-                        new_child = child
-            if new_child is None:
-                raise UserWarning("Could not find chord label '{}' (root path: {}, labels: {})".format(left_leaf.label,
-                                                                                                       left_leaf.root_path(),
-                                                                                                       [n.label for n in left_leaf.children]))
-            left_leaf = new_child
-        # find right leaf
-        right_leaf = self.children[1]
-        while len(right_leaf.children) != 0:
-            new_child = None
-            for child in right_leaf.children:
-                if child.label == right_leaf.label:
-                    if new_child is not None:
-                        new_child = right_leaf.children[1]
-                        break
-                    else:
-                        new_child = child
-            if new_child is None:
-                raise UserWarning("Could not find chord label '{}' (root path: {}, labels: {})".format(right_leaf.label,
-                                                                                                       right_leaf.root_path(),
-                                                                                                       [n.label for n in right_leaf.children]))
-            right_leaf = new_child
-        # initialize list
-        leaf_pair_list = [{'left': left_leaf,
-                           'right': right_leaf,
-                           'parent': self,
-                           'depth': depth}]
+        # find leaf pairs
+        leaf_pair_list = []
+        prelim_leaf_pair_list = [(self.children[0], self.children[1], 1)]
+        while prelim_leaf_pair_list:
+            left_leaf, right_leaf, pair_weight = prelim_leaf_pair_list.pop()
+            if not left_leaf.children and not right_leaf.children:
+                leaf_pair_list += [{'left': left_leaf,
+                                    'right': right_leaf,
+                                    'parent': self,
+                                    'depth': depth,
+                                    'weight': pair_weight}]
+            else:
+                # left leaf
+                left_children = []
+                for child in left_leaf.children:
+                    if child.label == left_leaf.label:
+                        if left_children:
+                            # What to do in case of multiple options for LEFT children?
+                            if left_tie_breaking == 'left':
+                                left_children = [left_leaf.children[0]]
+                                break
+                            elif left_tie_breaking == 'all':
+                                left_children += [child]
+                            else:
+                                raise UserWarning("Unknown left tie breaking policy: '{}'".format(left_tie_breaking))
+                        else:
+                            left_children = [child]
+                if not left_leaf.children:
+                    left_children = [left_leaf]
+                if not left_children:
+                    raise UserWarning("Could not find chord label '{}' (root path: {}, labels: {})".format(left_leaf.label,
+                                                                                                           left_leaf.root_path(),
+                                                                                                           [n.label for n in left_leaf.children]))
+                # right leaf
+                right_children = []
+                for child in right_leaf.children:
+                    if child.label == right_leaf.label:
+                        if right_children:
+                            # What to do in case of multiple options for RIGHT children?
+                            if right_tie_breaking == 'right':
+                                right_children = [right_leaf.children[1]]
+                                break
+                            elif right_tie_breaking == 'all':
+                                right_children += [child]
+                            else:
+                                raise UserWarning("Unknown right tie breaking policy: '{}'".format(right_tie_breaking))
+                        else:
+                            right_children = [child]
+                if not right_leaf.children:
+                    right_children = [right_leaf]
+                if not right_children:
+                    raise UserWarning("Could not find chord label '{}' (root path: {}, labels: {})".format(right_leaf.label,
+                                                                                                           right_leaf.root_path(),
+                                                                                                           [n.label for n in right_leaf.children]))
+                # insert back into preliminary list
+                weight_spread = len(left_children)*len(right_children)
+                for left_leaf in left_children:
+                    for right_leaf in right_children:
+                        prelim_leaf_pair_list.append((left_leaf, right_leaf, pair_weight/weight_spread))
         # recursively add pairs of children
         for child_idx, child in enumerate(self.children):
-            if len(child.children) != 0:
-                child_list = child.leaf_pairs(depth=depth+1,
+            if child.children:
+                child_list = child.leaf_pairs(left_tie_breaking=left_tie_breaking,
+                                              right_tie_breaking=right_tie_breaking,
+                                              depth=depth+1,
                                               node_idx=node_idx+child_idx)
                 leaf_pair_list += child_list
         # return list
@@ -155,15 +171,13 @@ class TreeParser(object):
             node, child_idx = node_stack[-1]
             if child_idx >= len(node.children):
                 node_stack.pop()
-                if len(node.children) == 0:
+                if not node.children:
                     leaf_nodes.append(node)
-                    # print("leaf node: '{}'".format(node.label))
             else:
                 node_stack[-1] = (node, child_idx+1)
                 child = node.children[child_idx]
                 node_stack.append((child, 0))
                 depths[child] = depths[node] + 1
-                # print("add node: '{}'".format(child.label))
         # determine node positions starting at leaf nodes
         if leaf_positions is not None and len(leaf_positions) < len(leaf_nodes):
             self.logger.warning("Number of given leaf positions is less than number of leaf nodes ({}<{})".format(len(leaf_positions),len(leaf_nodes)))
@@ -171,16 +185,16 @@ class TreeParser(object):
         node_positions = {}
         for leaf_idx, leaf in enumerate(leaf_nodes):
             if leaf_positions is not None:
-                node_positions[leaf] = (leaf_positions[leaf_idx], -depths[leaf])
+                node_positions[leaf] = (leaf_positions[leaf_idx], depths[leaf])
             else:
-                node_positions[leaf] = (leaf_idx, -depths[leaf])
+                node_positions[leaf] = (leaf_idx, depths[leaf])
         for node, depth in sorted(depths.items(), key=operator.itemgetter(1), reverse=True):
-            if len(node.children) > 0:
+            if node.children:
                 children_mean = 0
                 for child in node.children:
                     children_mean += node_positions[child][0]
                 children_mean /= len(node.children)
-                node_positions[node] = (children_mean, -depth)
+                node_positions[node] = (children_mean, depth)
         return node_positions
 
     def plot(self,
@@ -189,16 +203,19 @@ class TreeParser(object):
              line_style='-',
              line_width=2,
              label_style='italic',
-             node_style={'facecolor':'red', 'pad':10},  # todo: dict as default argument is dangerous (it's mutable)
+             node_style=None,
              padding=0,
              offset=(0,0),
              scaling=(1,1),
              leaf_positions=None,
              adjust_axes=True):
+        if not node_style:
+            node_style = {'facecolor': 'red', 'pad': 10}
         node_positions = self.layout(leaf_positions=leaf_positions)
+        max_depth = np.max([x[1] for x in node_positions.values()])
         # apply offset and scaling
         for node, (x_pos, y_pos) in node_positions.items():
-            node_positions[node] = (x_pos*scaling[0] + offset[0], y_pos*scaling[1] + offset[1])
+            node_positions[node] = (x_pos*scaling[0] + offset[0], (1-y_pos/max_depth)*scaling[1] + offset[1])
         # create plot if none was provided
         if ax is None:
             fig, ax = plt.subplots(1, 1, figsize=(15, 10))
