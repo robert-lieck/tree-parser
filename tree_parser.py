@@ -202,15 +202,24 @@ class TreeParser(object):
              line_color='k',
              line_style='-',
              line_width=2,
-             label_style='italic',
-             node_style=None,
              padding=0,
              offset=(0,0),
              scaling=(1,1),
              leaf_positions=None,
-             adjust_axes=True):
-        if not node_style:
-            node_style = {'facecolor': 'red', 'pad': 10}
+             adjust_axes=True,
+             fontdict=None,
+             textkwargs=None):
+        if fontdict is None:
+            fontdict = {}
+        for key, val in {'fontsize': 12}.items():
+            if key not in fontdict:
+                fontdict[key] = val
+        if textkwargs is None:
+            textkwargs = {}
+        for key, val in {'bbox': {'facecolor': 'red', 'pad': 10},
+                         'style': 'italic'}.items():
+            if key not in textkwargs:
+                textkwargs[key] = val
         node_positions = self.layout(leaf_positions=leaf_positions)
         max_depth = np.max([x[1] for x in node_positions.values()])
         # apply offset and scaling
@@ -234,6 +243,6 @@ class TreeParser(object):
             x_max = max(x_max, x_pos)
             y_min = min(y_min, y_pos)
             y_max = max(y_max, y_pos)
-            ax.text(x_pos, y_pos, node.label, style=label_style, bbox=node_style)
+            ax.text(x_pos, y_pos, node.label, fontdict=fontdict, **textkwargs)
         if adjust_axes:
             ax.axis([x_min-padding, x_max+padding, y_min-padding, y_max+padding])
