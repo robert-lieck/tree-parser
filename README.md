@@ -1,5 +1,10 @@
 # Tree Parser
+![build](https://github.com/robert-lieck/treeparser/workflows/build/badge.svg)
+[![PyPI version](https://badge.fury.io/py/treeparser.svg)](https://badge.fury.io/py/treeparser)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+
 A simple tree parser for trees in bracket notation written in python. For example the following code (with default values for `fontdict` and `textkwargs` explicitly specified)
+
 ```python
 from tree_parser import TreeParser
 import matplotlib.pyplot as plt
