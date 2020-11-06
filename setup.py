@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="treeparser",
-    version="0.1.0",
+    version="0.1.1",
     author="Robert Lieck",
     author_email="robert.lieck@epfl.ch",
     description="parsing simple strings into trees",
