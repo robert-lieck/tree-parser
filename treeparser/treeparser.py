@@ -162,7 +162,32 @@ class TreeParser(object):
         # return list
         return leaf_pair_list
 
-    def layout(self, leaf_positions=None):
+    def layout(self, leaf_positions=None, bottom_align=False, y_is_depth=None, y_is_span=None, x_mean=None):
+        # default for y_is_depth
+        if y_is_depth is None:
+            if bottom_align:
+                y_is_depth = False
+            else:
+                y_is_depth = True
+        # default for y_is_span
+        if y_is_span is None:
+            if bottom_align:
+                y_is_span = True
+            else:
+                y_is_span = False
+        # default for x_mean
+        if x_mean is None:
+            if y_is_span:
+                x_mean = False
+            else:
+                x_mean = True
+        # check
+        if y_is_depth and y_is_span:
+            raise ValueError("Cannot do both, determine y-position by span (y_is_span=True) and determine y-position by"
+                             " depth (y_is_depth=True)")
+        if bottom_align and y_is_depth:
+            raise ValueError("Cannot do both, bottom align leaves (bottom_align=True) and determine y-position by depth"
+                             " (y_is_depth=True)")
         # depth first search
         leaf_nodes = []
         node_stack = [(self, 0)]
@@ -184,18 +209,55 @@ class TreeParser(object):
             leaf_positions = None
         node_positions = {}
         for leaf_idx, leaf in enumerate(leaf_nodes):
+            # use positions if given
             if leaf_positions is not None:
-                node_positions[leaf] = (leaf_positions[leaf_idx], depths[leaf])
+                leaf_x, leaf_y = leaf_positions[leaf_idx]
             else:
-                node_positions[leaf] = (leaf_idx, depths[leaf])
+                leaf_x, leaf_y = (None, None)
+            # fill value if not given
+            if leaf_x is None:
+                leaf_x = leaf_idx
+            if leaf_y is None:
+                if bottom_align:
+                    leaf_y = 0
+                else:
+                    leaf_y = -depths[leaf]
+            node_positions[leaf] = (leaf_x, leaf_y, leaf_x, leaf_x)
+        # set for other nodes
         for node, depth in sorted(depths.items(), key=operator.itemgetter(1), reverse=True):
             if node.children:
-                children_mean = 0
+                child_mean_x = 0
+                child_min_x = np.inf
+                child_max_x = -np.inf
+                child_min_y = np.inf
+                child_max_y = -np.inf
+                span_min = np.inf
+                span_max = -np.inf
+                span_child_min = np.inf
+                span_child_max = -np.inf
                 for child in node.children:
-                    children_mean += node_positions[child][0]
-                children_mean /= len(node.children)
-                node_positions[node] = (children_mean, depth)
-        return node_positions
+                    child_x, child_y, span_start, span_end = node_positions[child]
+                    child_mean_x += node_positions[child][0]
+                    child_min_x = min(child_min_x, child_x)
+                    child_max_x = max(child_max_x, child_x)
+                    child_min_y = min(child_min_y, child_y)
+                    child_max_y = max(child_max_y, child_y)
+                    span_min = min(span_min, span_start)
+                    span_max = max(span_max, span_end)
+                    span_child_min = min(span_child_min, child_x - (span_end - span_start) / 2)
+                    span_child_max = max(span_child_max, child_x - (span_end - span_start) / 2)
+                child_mean_x /= len(node.children)
+                if x_mean:
+                    x_pos = child_mean_x
+                else:
+                    x_pos = span_child_min + (span_max - span_min) / 2
+                if y_is_depth:
+                    node_positions[node] = (x_pos, -depth, span_min, span_max)
+                elif y_is_span:
+                    node_positions[node] = (x_pos, span_max - span_min, span_min, span_max)
+                else:
+                    node_positions[node] = (x_pos, child_max_y + 1, span_min, span_max)
+        return {n: (x, y) for n, (x, y, s, e) in node_positions.items()}
 
     def plot(self,
              ax=None,
@@ -205,10 +267,13 @@ class TreeParser(object):
              padding=0,
              offset=(0,0),
              scaling=(1,1),
-             leaf_positions=None,
-             adjust_axes=True,
+             layout_kwargs=None,
+             adjust_axes=None,
              fontdict=None,
-             textkwargs=None):
+             textkwargs=None,
+             plot_nodes=True):
+        if layout_kwargs is None:
+            layout_kwargs = {}
         if fontdict is None:
             fontdict = {}
         for key, val in {'fontsize': 12}.items():
@@ -220,11 +285,14 @@ class TreeParser(object):
                          'style': 'italic'}.items():
             if key not in textkwargs:
                 textkwargs[key] = val
-        node_positions = self.layout(leaf_positions=leaf_positions)
-        max_depth = np.max([x[1] for x in node_positions.values()])
+        if 'horizontalalignment' not in textkwargs and 'ha' not in textkwargs:
+            textkwargs['ha'] = 'center'
+        if 'verticalalignment' not in textkwargs and 'va' not in textkwargs:
+            textkwargs['va'] = 'center'
+        node_positions = self.layout(**layout_kwargs)
         # apply offset and scaling
         for node, (x_pos, y_pos) in node_positions.items():
-            node_positions[node] = (x_pos*scaling[0] + offset[0], (1-y_pos/max_depth)*scaling[1] + offset[1])
+            node_positions[node] = (x_pos * scaling[0] + offset[0], y_pos * scaling[1] + offset[1])
         # create plot if none was provided
         if ax is None:
             fig, ax = plt.subplots(1, 1, figsize=(15, 10))
@@ -233,7 +301,7 @@ class TreeParser(object):
             for child in node.children:
                 child_x, child_y = node_positions[child]
                 ax.plot([x_pos, child_x], [y_pos, child_y], color=line_color, linestyle=line_style, linewidth=line_width)
-        # add nodes (get boundaries)
+        # get boundaries and add nodes
         x_min = np.inf
         y_min = np.inf
         x_max = -np.inf
@@ -243,6 +311,10 @@ class TreeParser(object):
             x_max = max(x_max, x_pos)
             y_min = min(y_min, y_pos)
             y_max = max(y_max, y_pos)
-            ax.text(x_pos, y_pos, node.label, fontdict=fontdict, **textkwargs)
+            if plot_nodes:
+                ax.text(x_pos, y_pos, node.label, fontdict=fontdict, **textkwargs)
+        # adjust axes
+        if adjust_axes is None:
+            adjust_axes = plot_nodes
         if adjust_axes:
             ax.axis([x_min-padding, x_max+padding, y_min-padding, y_max+padding])
